@@ -4,39 +4,41 @@
     <meta charset="UTF-8">
     <title>3Dアクションゲーム</title>
     <style>
-        /* touch-action: none でスマホのスクロールや拡大を防止します */
         body { margin: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
         canvas { display: block; }
-        #ui { position: absolute; top: 15px; left: 15px; color: white; font-size: 24px; font-family: sans-serif; font-weight: bold; text-shadow: 2px 2px 0 #000; }
-        #gameOver { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: red; font-size: 60px; font-family: sans-serif; font-weight: bold; text-shadow: 3px 3px 0 #000; display: none; text-align: center; width: 100%; }
+        #ui { position: absolute; top: 15px; left: 15px; color: white; font-size: 24px; font-family: sans-serif; font-weight: bold; text-shadow: 2px 2px 0 #000; pointer-events: none; }
+        #gameOver { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: red; font-size: 60px; font-family: sans-serif; font-weight: bold; text-shadow: 3px 3px 0 #000; display: none; text-align: center; width: 100%; pointer-events: none; }
         #retryBtn { font-size: 24px; color: white; background: #333; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin-top: 20px; pointer-events: auto; }
 
-        /* 【新しい要素】スマホ用バーチャルパッドのデザイン */
-        #dpad { position: absolute; bottom: 20px; left: 20px; display: grid; grid-template-columns: 60px 60px 60px; grid-template-rows: 60px 60px 60px; gap: 5px; }
-        #upBtn { grid-column: 2; grid-row: 1; }
-        #leftBtn { grid-column: 1; grid-row: 2; }
-        #downBtn { grid-column: 2; grid-row: 3; }
-        #rightBtn { grid-column: 3; grid-row: 2; }
-        
-        .ctrl-btn { background: rgba(255, 255, 255, 0.3); border: 2px solid #fff; border-radius: 10px; font-size: 24px; font-weight: bold; color: #333; display: flex; justify-content: center; align-items: center; }
-        .ctrl-btn:active { background: rgba(255, 255, 255, 0.7); } /* 押した時に光る */
-
-        /* 攻撃ボタンのデザイン */
-        #attackBtn { position: absolute; bottom: 40px; right: 20px; width: 90px; height: 90px; border-radius: 50%; background: rgba(255, 50, 50, 0.5); border: 3px solid #fff; color: white; font-size: 24px; font-weight: bold; display: flex; justify-content: center; align-items: center; }
-        #attackBtn:active { background: rgba(255, 50, 50, 0.9); }
+        /* 【新しい要素】バーチャルジョイスティックのデザイン */
+        #joystickBase {
+            position: absolute;
+            width: 120px; height: 120px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            display: none; /* 普段は隠しておく */
+            pointer-events: none; /* タッチ判定の邪魔にならないようにする */
+            transform: translate(-50%, -50%); /* 中心を指の位置に合わせる */
+            z-index: 10;
+        }
+        #joystickStick {
+            position: absolute;
+            width: 50px; height: 50px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+        }
     </style>
     <script src="three.min.js"></script>
 </head>
 <body>
     <div id="ui">倒した数: <span id="scoreText">0</span></div>
     
-    <div id="dpad">
-        <div id="upBtn" class="ctrl-btn">W</div>
-        <div id="leftBtn" class="ctrl-btn">A</div>
-        <div id="downBtn" class="ctrl-btn">S</div>
-        <div id="rightBtn" class="ctrl-btn">D</div>
+    <div id="joystickBase">
+        <div id="joystickStick"></div>
     </div>
-    <div id="attackBtn">剣</div>
 
     <div id="gameOver">
         GAME OVER<br>
@@ -114,57 +116,97 @@
         }
         setInterval(spawnEnemy, 2000);
 
-        // キーボードとマウスの入力（PC用）
-        const keys = { w: false, a: false, s: false, d: false };
-        document.addEventListener('keydown', (event) => {
-            const key = event.key.toLowerCase();
-            if (keys.hasOwnProperty(key)) keys[key] = true;
-        });
-        document.addEventListener('keyup', (event) => {
-            const key = event.key.toLowerCase();
-            if (keys.hasOwnProperty(key)) keys[key] = false;
-        });
-
         let isAttacking = false;
         let attackFrame = 0;
-        window.addEventListener('mousedown', (event) => {
-            if (event.button === 0 && !isAttacking && !isGameOver) {
-                isAttacking = true;
-                attackFrame = 0;
-            }
-        });
 
-        // 【新しい要素】スマホのタッチ操作（モバイル用）
-        const setupTouch = (id, key) => {
-            const btn = document.getElementById(id);
-            // 指を置いた時（キーを押したのと同じ扱いにする）
-            btn.addEventListener('touchstart', (e) => {
-                e.preventDefault(); 
-                keys[key] = true;
-            }, { passive: false });
-            // 指を離した時
-            btn.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                keys[key] = false;
-            }, { passive: false });
-        };
+        // 【新しい要素】ジョイスティックの状態管理
+        const joystick = { active: false, id: null, originX: 0, originY: 0, deltaX: 0, deltaY: 0 };
+        const maxJoyDistance = 40; // スティックが動く最大距離
 
-        // 十字キーをPCのWASDと連動させる
-        setupTouch('upBtn', 'w');
-        setupTouch('leftBtn', 'a');
-        setupTouch('downBtn', 's');
-        setupTouch('rightBtn', 'd');
+        const joystickBase = document.getElementById('joystickBase');
+        const joystickStick = document.getElementById('joystickStick');
 
-        // 剣ボタンの設定
-        const attackBtn = document.getElementById('attackBtn');
-        attackBtn.addEventListener('touchstart', (e) => {
+        // タッチ操作（スマホ用）
+        document.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            if (!isAttacking && !isGameOver) {
-                isAttacking = true;
-                attackFrame = 0;
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+
+                if (touch.clientX < window.innerWidth / 2) {
+                    // 左半分のタッチ：ジョイスティック出現
+                    if (!joystick.active) {
+                        joystick.active = true;
+                        joystick.id = touch.identifier;
+                        joystick.originX = touch.clientX;
+                        joystick.originY = touch.clientY;
+                        joystick.deltaX = 0;
+                        joystick.deltaY = 0;
+
+                        // UIを表示
+                        joystickBase.style.display = 'block';
+                        joystickBase.style.left = touch.clientX + 'px';
+                        joystickBase.style.top = touch.clientY + 'px';
+                        joystickStick.style.transform = `translate(-50%, -50%)`;
+                    }
+                } else {
+                    // 右半分のタッチ：攻撃
+                    if (!isAttacking && !isGameOver) {
+                        isAttacking = true;
+                        attackFrame = 0;
+                    }
+                }
             }
         }, { passive: false });
 
+        document.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!joystick.active) return;
+
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                if (touch.identifier === joystick.id) {
+                    // 指の移動量を計算
+                    let dx = touch.clientX - joystick.originX;
+                    let dy = touch.clientY - joystick.originY;
+                    
+                    // スティックが枠を飛び出さないように制限
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance > maxJoyDistance) {
+                        dx = (dx / distance) * maxJoyDistance;
+                        dy = (dy / distance) * maxJoyDistance;
+                    }
+
+                    joystick.deltaX = dx;
+                    joystick.deltaY = dy;
+
+                    // UIのスティックを動かす
+                    joystickStick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+                }
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                if (joystick.active && touch.identifier === joystick.id) {
+                    // ジョイスティックをリセットして隠す
+                    joystick.active = false;
+                    joystick.deltaX = 0;
+                    joystick.deltaY = 0;
+                    joystickBase.style.display = 'none';
+                }
+            }
+        }, { passive: false });
+
+
+        // キーボードとマウスの入力（PCでのテスト用）
+        const keys = { w: false, a: false, s: false, d: false };
+        document.addEventListener('keydown', (e) => { if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; });
+        document.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
+        window.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && !isAttacking && !isGameOver) { isAttacking = true; attackFrame = 0; }
+        });
 
         const playerSpeed = 0.15;
         const enemySpeed = 0.05;
@@ -177,10 +219,18 @@
                 return;
             }
 
-            if (keys.w) playerGroup.position.z -= playerSpeed;
-            if (keys.s) playerGroup.position.z += playerSpeed;
-            if (keys.a) playerGroup.position.x -= playerSpeed;
-            if (keys.d) playerGroup.position.x += playerSpeed;
+            // 【移動処理】ジョイスティックかキーボードで動かす
+            if (joystick.active) {
+                // ジョイスティックの傾きに合わせて移動（滑らかに動きます）
+                playerGroup.position.x += (joystick.deltaX / maxJoyDistance) * playerSpeed;
+                playerGroup.position.z += (joystick.deltaY / maxJoyDistance) * playerSpeed;
+            } else {
+                // PC用
+                if (keys.w) playerGroup.position.z -= playerSpeed;
+                if (keys.s) playerGroup.position.z += playerSpeed;
+                if (keys.a) playerGroup.position.x -= playerSpeed;
+                if (keys.d) playerGroup.position.x += playerSpeed;
+            }
 
             if (isAttacking) {
                 attackFrame++;
@@ -194,9 +244,7 @@
                 if (attackFrame === 10) {
                     for (let i = enemies.length - 1; i >= 0; i--) {
                         const e = enemies[i];
-                        const distance = playerGroup.position.distanceTo(e.position);
-                        
-                        if (distance < 3.0) {
+                        if (playerGroup.position.distanceTo(e.position) < 3.0) {
                             scene.remove(e);
                             enemies.splice(i, 1);
                             score++;
@@ -212,8 +260,7 @@
                 if (e.position.z < playerGroup.position.z) e.position.z += enemySpeed;
                 if (e.position.z > playerGroup.position.z) e.position.z -= enemySpeed;
 
-                const distanceToPlayer = playerGroup.position.distanceTo(e.position);
-                if (distanceToPlayer < 1.0) {
+                if (playerGroup.position.distanceTo(e.position) < 1.0) {
                     isGameOver = true;
                     document.getElementById('gameOver').style.display = 'block';
                 }
