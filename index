@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>3Dアクションゲーム</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 15px; left: 15px; color: white; font-size: 24px; font-family: sans-serif; font-weight: bold; text-shadow: 2px 2px 0 #000; }
+        #gameOver { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: red; font-size: 60px; font-family: sans-serif; font-weight: bold; text-shadow: 3px 3px 0 #000; display: none; text-align: center; }
+        #retryBtn { font-size: 24px; color: white; background: #333; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin-top: 20px; }
+    </style>
+    <script src="three.min.js"></script>
+</head>
+<body>
+    <div id="ui">倒した数: <span id="scoreText">0</span></div>
+    <div id="gameOver">
+        GAME OVER<br>
+        <button id="retryBtn" onclick="location.reload()">もう一度遊ぶ</button>
+    </div>
+
+    <script>
+        let score = 0;
+        let isGameOver = false;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 20, 10);
+        scene.add(directionalLight);
+
+        const floorGeometry = new THREE.PlaneGeometry(100, 100);
+        const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // 【新しい要素】画像を読み込む準備
+        const textureLoader = new THREE.TextureLoader();
+
+        // ① プレイヤーと剣の画像を読み込む
+        const playerTex = textureLoader.load('player.png');
+        const swordTex = textureLoader.load('sword.png');
+
+        // ② モブの画像をリスト（配列）として複数読み込む
+        const mobTextures = [
+            textureLoader.load('mob1.png'),
+            textureLoader.load('mob2.png'),
+            textureLoader.load('mob3.png')
+        ];
+
+        // プレイヤー（体と剣）の作成
+        const playerGroup = new THREE.Group();
+        scene.add(playerGroup);
+
+        const bodyGeometry = new THREE.BoxGeometry(1, 2, 1);
+        // 赤色の代わりに、読み込んだプレイヤー画像を貼り付ける
+        const bodyMaterial = new THREE.MeshStandardMaterial({ map: playerTex });
+        const playerBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        playerBody.position.y = 1;
+        playerGroup.add(playerBody);
+
+        const swordGeometry = new THREE.BoxGeometry(0.2, 1.5, 0.2);
+        swordGeometry.translate(0, 0.75, 0);
+        // 銀色の代わりに、読み込んだ剣の画像を貼り付ける
+        const swordMaterial = new THREE.MeshStandardMaterial({ map: swordTex });
+        const sword = new THREE.Mesh(swordGeometry, swordMaterial);
+        sword.position.set(0.6, 1, -0.2);
+        playerGroup.add(sword);
+
+        // モブ（敵）の準備
+        const enemies = [];
+        const enemyGeometry = new THREE.BoxGeometry(1, 2, 1);
+
+        function spawnEnemy() {
+            if (isGameOver) return;
+            
+            // 【新しい要素】0, 1, 2 のどれかの数字をランダムに作る
+            const randomIndex = Math.floor(Math.random() * mobTextures.length);
+            // ランダムに選ばれた画像を敵に貼り付ける
+            const enemyMaterial = new THREE.MeshStandardMaterial({ map: mobTextures[randomIndex] });
+            
+            const enemy = new THREE.Mesh(enemyGeometry, enemyMaterial);
+            
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 15;
+            enemy.position.x = playerGroup.position.x + Math.cos(angle) * radius;
+            enemy.position.z = playerGroup.position.z + Math.sin(angle) * radius;
+            enemy.position.y = 1;
+            
+            scene.add(enemy);
+            enemies.push(enemy);
+        }
+        setInterval(spawnEnemy, 2000);
+
+        const keys = { w: false, a: false, s: false, d: false };
+
+        document.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) keys[key] = true;
+        });
+
+        document.addEventListener('keyup', (event) => {
+            const key = event.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) keys[key] = false;
+        });
+
+        let isAttacking = false;
+        let attackFrame = 0;
+
+        window.addEventListener('mousedown', (event) => {
+            if (event.button === 0 && !isAttacking && !isGameOver) {
+                isAttacking = true;
+                attackFrame = 0;
+            }
+        });
+
+        const playerSpeed = 0.15;
+        const enemySpeed = 0.05;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isGameOver) {
+                renderer.render(scene, camera);
+                return;
+            }
+
+            if (keys.w) playerGroup.position.z -= playerSpeed;
+            if (keys.s) playerGroup.position.z += playerSpeed;
+            if (keys.a) playerGroup.position.x -= playerSpeed;
+            if (keys.d) playerGroup.position.x += playerSpeed;
+
+            if (isAttacking) {
+                attackFrame++;
+                if (attackFrame <= 10) sword.rotation.x -= 0.15;
+                else if (attackFrame <= 20) sword.rotation.x += 0.15;
+                else {
+                    isAttacking = false;
+                    sword.rotation.x = 0;
+                }
+
+                if (attackFrame === 10) {
+                    for (let i = enemies.length - 1; i >= 0; i--) {
+                        const e = enemies[i];
+                        const distance = playerGroup.position.distanceTo(e.position);
+                        
+                        if (distance < 3.0) {
+                            scene.remove(e);
+                            enemies.splice(i, 1);
+                            score++;
+                            document.getElementById('scoreText').innerText = score;
+                        }
+                    }
+                }
+            }
+
+            enemies.forEach((e) => {
+                if (e.position.x < playerGroup.position.x) e.position.x += enemySpeed;
+                if (e.position.x > playerGroup.position.x) e.position.x -= enemySpeed;
+                if (e.position.z < playerGroup.position.z) e.position.z += enemySpeed;
+                if (e.position.z > playerGroup.position.z) e.position.z -= enemySpeed;
+
+                const distanceToPlayer = playerGroup.position.distanceTo(e.position);
+                if (distanceToPlayer < 1.0) {
+                    isGameOver = true;
+                    document.getElementById('gameOver').style.display = 'block';
+                }
+            });
+
+            camera.position.x = playerGroup.position.x;
+            camera.position.y = playerGroup.position.y + 4;
+            camera.position.z = playerGroup.position.z + 8;
+            camera.lookAt(playerGroup.position);
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+    </script>
+</body>
+</html>
