@@ -28,9 +28,7 @@ const mobTextures = [
     textureLoader.load('mob1.png'), textureLoader.load('mob2.png'), textureLoader.load('mob3.png')
 ];
 
-// --- 2. クラス化（設計図）による整理整頓 ---
-
-// 【プレイヤーの設計図】
+// --- 2. クラス化（設計図） ---
 class Player {
     constructor() {
         this.group = new THREE.Group();
@@ -76,11 +74,10 @@ class Player {
     }
 }
 
-// 【敵の管理と「倉庫（オブジェクトプール）」の設計図】
 class EnemyManager {
     constructor() {
-        this.activeEnemies = []; // 画面に出ている敵
-        this.pool = [];          // 倒されて倉庫に眠っている敵（ラグ対策）
+        this.activeEnemies = [];
+        this.pool = [];
         this.geometry = new THREE.BoxGeometry(1, 2, 1);
         this.speed = 0.05;
     }
@@ -89,10 +86,9 @@ class EnemyManager {
         if (isGameOver) return;
         let enemy;
         
-        // ★ラグ対策：倉庫に敵のストックがあれば使い回す、無ければ新しく作る
         if (this.pool.length > 0) {
-            enemy = this.pool.pop(); // 倉庫から取り出す
-            enemy.visible = true;    // 再び表示する
+            enemy = this.pool.pop();
+            enemy.visible = true;
         } else {
             const randomTex = mobTextures[Math.floor(Math.random() * mobTextures.length)];
             enemy = new THREE.Mesh(this.geometry, new THREE.MeshStandardMaterial({ map: randomTex }));
@@ -119,7 +115,6 @@ class EnemyManager {
     }
 
     remove(enemy) {
-        // ★ラグ対策：データを完全に消さずに透明にして倉庫へ戻すだけ
         enemy.visible = false; 
         this.activeEnemies = this.activeEnemies.filter(e => e !== enemy);
         this.pool.push(enemy);
@@ -130,8 +125,21 @@ class EnemyManager {
 const player = new Player();
 const enemyManager = new EnemyManager();
 
-// 2秒ごとに敵をスポーン
 setInterval(() => enemyManager.spawn(player.group.position), 2000);
+
+// 【復活】PC用キーボードとマウスの準備
+const keys = { w: false, a: false, s: false, d: false };
+document.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+    if (keys.hasOwnProperty(key)) keys[key] = true;
+});
+document.addEventListener('keyup', (e) => {
+    const key = e.key.toLowerCase();
+    if (keys.hasOwnProperty(key)) keys[key] = false;
+});
+window.addEventListener('mousedown', (e) => {
+    if (e.button === 0) player.attack();
+});
 
 // スマホ用ジョイスティックの準備
 const joystick = { active: false, id: null, originX: 0, originY: 0, deltaX: 0, deltaY: 0 };
@@ -183,7 +191,7 @@ document.addEventListener('touchend', (e) => {
     }
 }, { passive: false });
 
-// --- 4. メインループ（ずっと繰り返す処理） ---
+// --- 4. メインループ ---
 function animate() {
     requestAnimationFrame(animate);
     if (isGameOver) {
@@ -191,10 +199,18 @@ function animate() {
         return;
     }
 
-    // プレイヤーの移動とアニメーション
+    // 【復活】プレイヤーの移動（スマホとPCの共存）
     if (joystick.active) {
+        // スマホのジョイスティック移動
         player.move((joystick.deltaX / maxJoyDistance) * player.speed, (joystick.deltaY / maxJoyDistance) * player.speed);
+    } else {
+        // PCのWASDキー移動
+        if (keys.w) player.move(0, -player.speed);
+        if (keys.s) player.move(0, player.speed);
+        if (keys.a) player.move(-player.speed, 0);
+        if (keys.d) player.move(player.speed, 0);
     }
+    
     player.update();
 
     // 攻撃の当たり判定
@@ -202,14 +218,13 @@ function animate() {
         for (let i = enemyManager.activeEnemies.length - 1; i >= 0; i--) {
             const e = enemyManager.activeEnemies[i];
             if (player.group.position.distanceTo(e.position) < 3.0) {
-                enemyManager.remove(e); // 敵を破壊ではなく「倉庫」へ送る！
+                enemyManager.remove(e);
                 score++;
                 document.getElementById('scoreText').innerText = score;
             }
         }
     }
 
-    // 敵の移動とカメラ追従
     enemyManager.update(player.group.position);
     
     camera.position.x = player.group.position.x;
